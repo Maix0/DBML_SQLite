@@ -1,10 +1,22 @@
 import re
-import os
 import uuid
-from pydbml import PyDBML 
+from pydbml import PyDBML
 from pydbml.classes import Enum
 from pathlib import Path
 from itertools import chain
+
+__all__ = [
+    "toSQLite",
+    "validDBMLFile",
+    "processFile",
+    "processIndex",
+    "processEnum",
+    "processTable",
+    "processRef",
+    "processColumn",
+    "coerceColType",
+]
+
 
 def toSQLite(dbml=".", emulation="full", tableExists=True, indexExists=True, join=True):
     """
@@ -12,36 +24,57 @@ def toSQLite(dbml=".", emulation="full", tableExists=True, indexExists=True, joi
 
     Parameters:
     dbml (str): a valid string for converting to a Path object. Should point to a `.dbml` file containing valid DBML *or* a directory containing such files. Default is a period, in which case current working directory will be searched and all such files will be parsed.
-    emulation (str): specifies emulation mode for enum functionality since it is not directly supported by SQLite. Default is "full", and the other option is "half". 
+    emulation (str): specifies emulation mode for enum functionality since it is not directly supported by SQLite. Default is "full", and the other option is "half".
     tableExists (bool): Default is True. If True, all generated `CREATE TABLE` SQLite statements will have `IF NOT EXISTS` language included.
     indexExists (bool): Default is True. If True, all generated `CREATE INDEX` SQLite statements will have `IF NOT EXISTS` language included.
     join (bool): Default is True. If True, function will `join` the result list of string segments with an empty string and return the resulting string to you. Otherwise, the one-dimensional list of string segments will be returned to you directly.
 
-    Returns: 
+    Returns:
     str or list of str: a valid sequence of SQLite syntax.
     """
     results = []
     p = Path(dbml)
     p.resolve()
     if not p.exists():
-        raise ValueError(f'Argument "{dbml}" does not refer to an existing file or directory.')
+        raise ValueError(
+            f'Argument "{dbml}" does not refer to an existing file or directory.'
+        )
     if p.is_file():
         if validDBMLFile(dbml):
-            results.append(processFile(p, emulation, tableExists=tableExists, indexExists=indexExists, join=False))
+            results.append(
+                processFile(
+                    p,
+                    emulation,
+                    tableExists=tableExists,
+                    indexExists=indexExists,
+                    join=False,
+                )
+            )
             results = list(chain.from_iterable(results))
             if join:
                 results = "".join(results)
             return results
         else:
-            raise ValueError(f'Argument "{dbml}" is a path to a file, but it does not have a `.dbml` extension.')
+            raise ValueError(
+                f'Argument "{dbml}" is a path to a file, but it does not have a `.dbml` extension.'
+            )
     elif p.is_dir():
-        targets = [f for f in p.glob('*.dbml')]
+        targets = [f for f in p.glob("*.dbml")]
         for target in targets:
-            results.append(processFile(target, emulation, tableExists=tableExists, indexExists=indexExists, join=False))
+            results.append(
+                processFile(
+                    target,
+                    emulation,
+                    tableExists=tableExists,
+                    indexExists=indexExists,
+                    join=False,
+                )
+            )
         results = list(chain.from_iterable(results))
         if join:
             results = "".join(results)
         return results
+
 
 def validDBMLFile(s):
     """
@@ -53,12 +86,20 @@ def validDBMLFile(s):
     Returns:
     bool: True if s ends with '.dbml', else False.
     """
-    if s.endswith('.dbml'):
+    if s.endswith(".dbml"):
         return True
     else:
         return False
 
-def processFile(target, emulationMode, tableExists=True, indexExists=True, idxNameFunc=uuid.uuid4, join=True):
+
+def processFile(
+    target,
+    emulationMode,
+    tableExists=True,
+    indexExists=True,
+    idxNameFunc=uuid.uuid4,
+    join=True,
+):
     """
     Given a target `.dbml` file, parse and generate a valid SQLite string.
 
@@ -74,18 +115,23 @@ def processFile(target, emulationMode, tableExists=True, indexExists=True, idxNa
     """
     parsed = PyDBML.parse_file(str(target))
     statements = []
-    if emulationMode == 'full':
+    if emulationMode == "full":
         for enum in parsed.enums:
             statements.append(processEnum(enum, tableExists, False))
     for table in parsed.tables:
         statements.append(processTable(table, emulationMode, tableExists, False))
     for table in parsed.tables:
         for index in table.indexes:
-            statements.append(processIndex(table, index, idxNameFunc, indexExists=indexExists, join=False))
+            statements.append(
+                processIndex(
+                    table, index, idxNameFunc, indexExists=indexExists, join=False
+                )
+            )
     statements = list(chain.from_iterable(statements))
     if join:
         statements = "".join(statements)
     return statements
+
 
 def processIndex(table, index, idxNameFunc=uuid.uuid4, indexExists=True, join=True):
     """
@@ -98,31 +144,32 @@ def processIndex(table, index, idxNameFunc=uuid.uuid4, indexExists=True, join=Tr
     indexExists (bool): Default is True. If True, the generated `CREATE INDEX` SQLite statement will have `IF NOT EXISTS` language included.
     join (bool): Default is True. If True, function will `join` the result list of string segments with an empty string and return the resulting string to you. otherwise, the one-dimensional list of string segments will be returned to you directly.
 
-    Returns: 
+    Returns:
     str or list of str: SQLite DDL for creating an index.
     """
     parts = []
-    parts.append(f'CREATE{" UNIQUE" if index.unique else ""} INDEX ')
+    parts.append(f"CREATE{' UNIQUE' if index.unique else ''} INDEX ")
     if indexExists:
-        parts.append('IF NOT EXISTS ')
-    if index.name != "" and index.name != None:
+        parts.append("IF NOT EXISTS ")
+    if index.name != "" and index.name is not None:
         parts.append(index.name)
     else:
-        parts.append('_' + ''.join(str(idxNameFunc()).split('-')))
-    parts.append(f' ON {table.name} (')
+        parts.append("_" + "".join(str(idxNameFunc()).split("-")))
+    parts.append(f" ON {table.name} (")
     for i, col in enumerate(index.subjects):
         parts.append(col.name)
         if i < len(index.subjects) - 1:
-            parts.append(', ')
-    parts.append(');\n')
+            parts.append(", ")
+    parts.append(");\n")
     if join:
         parts = "".join(parts)
     return parts
 
+
 def processEnum(enum, tableExists=True, join=True):
     """
-    Take an Enum object generated by the PyDBML library and use it to generate SQLite DDL for creating an enum table for "full" enum emulation mode only.   
-    
+    Take an Enum object generated by the PyDBML library and use it to generate SQLite DDL for creating an enum table for "full" enum emulation mode only.
+
     Parameters:
     enum (Enum): Enum object generated by PyDBML library representing an SQL enum.
     tableExists (bool): Default is True. If True, all generated `CREATE TABLE` SQLite statements will have `IF NOT EXISTS` language included.
@@ -132,50 +179,56 @@ def processEnum(enum, tableExists=True, join=True):
     str or list of str: SQLite DDL for creating a table to emulate SQL enum functionality.
     """
     segments = []
-    segments.append(f'CREATE TABLE {"IF NOT EXISTS" if tableExists else ""} {enum.name} (\n  id INTEGER PRIMARY KEY,\n  type TEXT NOT NULL UNIQUE,\n  seq INTEGER NOT NULL UNIQUE\n);\n')
+    segments.append(
+        f"CREATE TABLE {'IF NOT EXISTS' if tableExists else ''} {enum.name} (\n  id INTEGER PRIMARY KEY,\n  type TEXT NOT NULL UNIQUE,\n  seq INTEGER NOT NULL UNIQUE\n);\n"
+    )
     for i, v in enumerate(enum.items):
-        segments.append(f'INSERT INTO {enum.name}(type, seq) VALUES (\'{v.name}\', {i + 1});\n')
+        segments.append(
+            f"INSERT INTO {enum.name}(type, seq) VALUES ('{v.name}', {i + 1});\n"
+        )
     if join:
         segments = "".join(segments)
     return segments
 
+
 def processTable(table, emulationMode, tableExists=True, join=True):
     """
     Generate SQLite DDL for creating a table.
-    
+
     Parameters:
     table (Table): Table object generated by PyDBML, representing SQLite table you want to make.
-    emulationMode (str): if SQL enums are defined by dbml parsed by PyDBML, there are two ways to emulate them. Passing "full" for this parameter emulates enum by making a separate enum table. Passing "half" simply uses SQLite CHECK statements within column definitions utilizing enum types. 
+    emulationMode (str): if SQL enums are defined by dbml parsed by PyDBML, there are two ways to emulate them. Passing "full" for this parameter emulates enum by making a separate enum table. Passing "half" simply uses SQLite CHECK statements within column definitions utilizing enum types.
     tableExists (bool): Default is True. If True, all generated `CREATE TABLE` SQLite statements will have `IF NOT EXISTS` language included.
     join (bool): Default is True. If True, function will `join` the result list of string segments with an empty string and return the resulting string to you. Otherwise, the one-dimensional list of string segments will be returned to you directly.
 
-    Return: 
+    Return:
     str or list of str: SQLite DDL for generating a table.
     """
     segments = []
-    segments.append('CREATE TABLE ')
+    segments.append("CREATE TABLE ")
     if tableExists:
-        segments.append('IF NOT EXISTS ')
-    segments.append(f'{table.name} (\n')
+        segments.append("IF NOT EXISTS ")
+    segments.append(f"{table.name} (\n")
     for i, col in enumerate(table.columns):
         segments.append(processColumn(col, emulationMode, False))
         if i < len(table.columns) - 1:
-            segments.append(',\n')
-    for j, ref in enumerate(table.refs):
+            segments.append(",\n")
+    for j, ref in enumerate(table.get_refs()):
         if j == 0:
-            segments.append(',\n')
+            segments.append(",\n")
         segments.append(processRef(ref, False))
-        if j < len(table.refs) - 1:
-            segments.append(',\n')
-    segments.append('\n);\n')
+        if j < len(table.get_refs()) - 1:
+            segments.append(",\n")
+    segments.append("\n);\n")
     segments = list(chain.from_iterable(segments))
     if join:
         segments = "".join(segments)
     return segments
 
+
 def processRef(ref, join=True):
     """
-    Convert a Ref object parsed by PyDBML from dbml into SQLite DDL. 
+    Convert a Ref object parsed by PyDBML from dbml into SQLite DDL.
 
     Parameters:
     ref (Ref): Ref object generated by PyDBML.
@@ -184,16 +237,22 @@ def processRef(ref, join=True):
     Returns:
     str or list of str: SQLite DDL for defining a foreign key within a `CREATE TABLE` statement.
     """
+
+    assert len(ref.col1) == 1
+    assert len(ref.col2) == 1
     segments = []
-    segments.append('  FOREIGN KEY(')
-    segments.append(f'{ref.col.name}) REFERENCES {ref.ref_table.name}({ref.ref_col.name})')
+    segments.append("  FOREIGN KEY(")
+    segments.append(
+        f"{ref.col1[0].name}) REFERENCES {ref.table2.name}({ref.col2[0].name})"
+    )
     if ref.on_update:
-        segments.append(f' ON UPDATE {ref.on_update.upper()}')
+        segments.append(f" ON UPDATE {ref.on_update.upper()}")
     if ref.on_delete:
-        segments.append(f' ON DELETE {ref.on_delete.upper()}')
+        segments.append(f" ON DELETE {ref.on_delete.upper()}")
     if join:
         segments = "".join(segments)
     return segments
+
 
 def processColumn(column, emulationMode, join=True):
     """
@@ -208,19 +267,19 @@ def processColumn(column, emulationMode, join=True):
     str or list of str: SQLite DDL for creating a column.
     """
     segments = []
-    segments.append(f'  {column.name}')
+    segments.append(f"  {column.name}")
     if isinstance(column.type, str):
-        segments.append(f' {coerceColType(column.type)}')
+        segments.append(f" {coerceColType(column.type)}")
         if column.pk:
-            segments.append(' PRIMARY KEY')
+            segments.append(" PRIMARY KEY")
             if column.autoinc:
-                segments.append(' AUTOINCREMENT')
+                segments.append(" AUTOINCREMENT")
         if column.not_null:
-            segments.append(' NOT NULL')
+            segments.append(" NOT NULL")
         if column.unique:
-            segments.append(' UNIQUE')
-        if column.default != None:
-            segments.append(' DEFAULT ')
+            segments.append(" UNIQUE")
+        if column.default is not None:
+            segments.append(" DEFAULT ")
             if isinstance(column.default, str):
                 segments.append("'")
                 segments.append(column.default)
@@ -229,52 +288,76 @@ def processColumn(column, emulationMode, join=True):
             if isinstance(column.default, str):
                 segments.append("'")
     elif isinstance(column.type, Enum):
-        if emulationMode == 'full':
-            segments.append(f' TEXT NOT NULL REFERENCES {column.type.name}(type)')
+        if emulationMode == "full":
+            segments.append(f" TEXT NOT NULL REFERENCES {column.type.name}(type)")
         else:
-            segments.append(f' TEXT CHECK( {column.name} IN ( ')
+            segments.append(f" TEXT CHECK( {column.name} IN ( ")
             enums = []
             for e in column.type.items:
                 enums.append(f"'{e.name}'")
             segments.append(", ".join(enums))
-            segments.append(' ) ) NOT NULL')
+            segments.append(" ) ) NOT NULL")
     else:
-        raise TypeError('Data type of column specification unknown.')
+        raise TypeError("Data type of column specification unknown.")
     if join:
         segments = "".join(segments)
     return segments
 
+
 def coerceColType(colType):
-    """ 
+    """
     Given a colType, coerce to closest native SQLite type and return that, otherwise raise a ValueError.
 
     Parameters:
     colType (str): column type from DBML specification.
 
     Returns:
-    str: valid SQLite column type. 
+    str: valid SQLite column type.
     """
     colType = colType.upper()
-    nativeTypes = ('NULL', 'INTEGER', 'REAL', 'TEXT', 'BLOB')
+    nativeTypes = ("NULL", "INTEGER", "REAL", "TEXT", "BLOB")
     if colType in nativeTypes:
         return colType
-    nils = ('NONE', 'NIL')
+    nils = ("NONE", "NIL")
     if colType in nils:
-        return 'NULL'
-    integers = ('BOOL', 'BOOLEAN', 'INT', 'TINYINT', 'SMALLINT', 'MEDIUMINT', 'LONGINT', 'BIGINT', 'YEAR')
+        return "NULL"
+    integers = (
+        "BOOL",
+        "BOOLEAN",
+        "INT",
+        "TINYINT",
+        "SMALLINT",
+        "MEDIUMINT",
+        "LONGINT",
+        "BIGINT",
+        "YEAR",
+    )
     if colType in integers:
-        return 'INTEGER'
-    reals = ('FLOAT', 'DOUBLE', 'DECIMAL', 'NUMERIC')
+        return "INTEGER"
+    reals = ("FLOAT", "DOUBLE", "DECIMAL", "NUMERIC")
     if colType in reals:
-        return 'REAL'
-    texts = ('STR', 'DATE', 'DATETIME', 'TIMESTAMP', 'TIME', 'VARCHAR', 'TINYTEXT', 'SMALLTEXT', 'MEDIUMTEXT', 'LONGTEXT')
+        return "REAL"
+    texts = (
+        "STR",
+        "DATE",
+        "DATETIME",
+        "TIMESTAMP",
+        "TIME",
+        "VARCHAR",
+        "TINYTEXT",
+        "SMALLTEXT",
+        "MEDIUMTEXT",
+        "LONGTEXT",
+    )
     if colType in texts:
-        return 'TEXT'
-    blobs = ('TINYBLOB', 'SMALLBLOB', 'MEDIUMBLOB', 'LONGBLOB', 'BYTE', 'BYTES', 'UUID')
+        return "TEXT"
+    blobs = ("TINYBLOB", "SMALLBLOB", "MEDIUMBLOB", "LONGBLOB", "BYTE", "BYTES", "UUID")
     if colType in blobs:
-        return 'BLOB'
-    res = re.search(r'VARCHAR\([0-9]+\)', colType)
+        return "BLOB"
+    res = re.search(r"VARCHAR\([0-9]+\)", colType)
     if res:
-        return 'TEXT'
+        return "TEXT"
     else:
-        raise ValueError(f'Could not figure out how to coerce "{colType}" to valid SQLite type.')
+        raise ValueError(
+            f'Could not figure out how to coerce "{colType}" to valid SQLite type.'
+        )

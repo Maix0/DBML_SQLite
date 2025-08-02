@@ -1,4 +1,3 @@
-import pytest
 import os
 from dbml_sqlite import cli
 from click.testing import CliRunner
